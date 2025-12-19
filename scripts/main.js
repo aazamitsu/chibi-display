@@ -3,13 +3,28 @@ let lastType = undefined;
 let fade = 0;
 let squish = 0;
 let reloads = [];
+let lastTex = undefined;
+
+function loadTex(name, defValue){
+    let file = Vars.tree.get("chibis/" + name + ".png");
+    if(file.exists()){
+        let tex = new Texture(file);
+        tex.setFilter(Texture.TextureFilter.linear);
+        return tex;
+    }
+    return defValue;
+}
 
 Events.run(ClientLoadEvent, e => {
     Vars.content.units().each(u => {
-        let file = Vars.tree.get("chibis/" + u.name + ".png");
-        if(file.exists()){
-            textures[u] = new Texture(file);
-            textures[u].setFilter(Texture.TextureFilter.linear);
+        let mainTex = loadTex(u.name);
+        if(mainTex){
+            textures[u] = {
+                main: mainTex,
+                mining: loadTex(u.name + "-mining", mainTex),
+                building: loadTex(u.name + "-building", mainTex),
+                shooting: loadTex(u.name + "-shooting", mainTex),
+            };
         }
     });
 
@@ -48,10 +63,27 @@ Events.run(ClientLoadEvent, e => {
 	        }
 	        
 	        if(lastType && textures[lastType] && Vars.state.isGame()){
+                let data = textures[lastType];
+                let unit = Vars.player.unit();
+
+                let mainTex = 
+                    Vars.player.dead() ? data.main : 
+                    (
+                        unit.mining() ? data.mining :
+                        unit.isBuilding() ? data.building :
+                        unit.isShooting ? data.shooting :
+                        data.main
+                    );
+                
+                if(lastTex != mainTex){
+                    squish = Math.max(squish, 0.5);
+                    lastTex = mainTex;
+                }
+
                 let conf = config[lastType] || {}
                 let fin = Interp.swingOut.apply(fade);
                 let hOffset = 0;
-	            let tex = Draw.wrap(textures[lastType]);
+	            let tex = Draw.wrap(mainTex);
 	            let height = width * tex.height / tex.width;
                 let squishFactor = 0.2 * squish + Mathf.sin(Time.time, 20, 0.01);
                 let floatScl = 50, floatMag = 8;
@@ -63,5 +95,6 @@ Events.run(ClientLoadEvent, e => {
         }
     });
     elem.touchable = Touchable.disabled;
-    Vars.ui.hudGroup.addChildAt(0, elem);
+    Core.app.post(() => Vars.ui.hudGroup.addChildAt(0, elem));
 })
+
